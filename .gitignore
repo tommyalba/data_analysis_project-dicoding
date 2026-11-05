@@ -1,0 +1,98 @@
+# =====================================
+# Python & Virtual Environments
+# =====================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments (venv, conda, etc.)
+venv/
+ENV/
+env/
+.venv/
+
+# =====================================
+# Jupyter Notebooks & Checkpoints
+# =====================================
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# =====================================
+# Data & Large Files (Data Science Specific)
+# =====================================
+data/
+data/raw/
+data/processed/
+data/external/
+*.csv
+*.parquet
+*.feather
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.joblib
+*.model
+*.weights
+*.onnx
+*.bin
+
+# Save the local model training output/logs folder
+outputs/
+runs/
+logs/
+mlruns/
+wandb/
+
+# =====================================
+# IDE, Editors & OS Specific
+# =====================================
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# PyCharm / JetBrains
+.idea/
+
+# macOS / Windows System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# AI Assistant Folders
+.devin/
+
+# =====================================
+# Environment Variables & Secrets
+# =====================================
+.env
+.env.local
+.env.*.local
+secrets.json
+credentials.json
