@@ -552,7 +552,8 @@ elif page == "Geographic Analysis":
         state_f,
         path=["customer_state"],
         values="total_revenue",
-        color_discrete_sequence=[PRIMARY],
+        color="total_revenue",
+        color_continuous_scale="Blues",
         title="Revenue Share Treemap by State",
         template=TEMPLATE,
     )
@@ -631,7 +632,7 @@ elif page == "Payment Behaviour":
             pay_expanded,
             names="payment_type", values="count",
             hole=0.5,
-            color_discrete_sequence=[PRIMARY],
+            color_discrete_sequence=px.colors.qualitative.Set2,
             title="Payment Type Distribution",
             template=TEMPLATE,
         )
