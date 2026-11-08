@@ -626,13 +626,20 @@ elif page == "Payment Behaviour":
     )
     pay_expanded.columns = ["payment_type", "count"]
 
+    # Shared colour map so the donut and revenue bar identify each
+    # payment type identically (order follows the donut's count ranking).
+    ptype_colors = dict(
+        zip(pay_expanded["payment_type"], px.colors.qualitative.Set2)
+    )
+
     c1, c2 = st.columns(2)
     with c1:
         fig = px.pie(
             pay_expanded,
             names="payment_type", values="count",
+            color="payment_type",
             hole=0.5,
-            color_discrete_sequence=px.colors.qualitative.Set2,
+            color_discrete_map=ptype_colors,
             title="Payment Type Distribution",
             template=TEMPLATE,
         )
@@ -688,23 +695,28 @@ elif page == "Payment Behaviour":
         st.plotly_chart(fig2, use_container_width=True)
 
     # ── Revenue by payment type ───────────────────────────────────────────
+    # Exploded to single payment types so categories match the donut
+    # (multi-type orders count toward each type, same convention).
     pay_revenue = (
-        orders_pay
-        .groupby("payment_types", as_index=False)
+        orders_pay.assign(
+            payment_type=orders_pay["payment_types"].str.split(", ")
+        )
+        .explode("payment_type")
+        .groupby("payment_type", as_index=False)
         .agg(
-            orders=("order_id",           "nunique"),
+            orders=("order_id",            "nunique"),
             total =("payment_total_value", "sum"),
-            avg   =("payment_total_value", "mean"),
         )
         .sort_values("total", ascending=False)
     )
     fig3 = px.bar(
         pay_revenue,
-        x="payment_types", y="total",
-        color_discrete_sequence=[PRIMARY],
+        x="payment_type", y="total",
+        color="payment_type",
+        color_discrete_map=ptype_colors,
         text="orders",
         labels={
-            "payment_types": "Payment Type",
+            "payment_type": "Payment Type",
             "total": "Total Revenue (BRL)",
             "orders": "# Orders",
         },
