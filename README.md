@@ -55,13 +55,64 @@ Beyond descriptive statistics, the project implements two complementary techniqu
 | Component | Technology |
 |---|---|
 | Analysis pipeline | `notebook.ipynb` -- pandas, numpy, seaborn, matplotlib, plotly |
+| Reusable analytics modules | `src/cohort.py`, `src/rfm.py` -- cohort retention and RFM segmentation, dataset-agnostic |
 | Data exports | Parquet files under `dashboard/data/` (dtype-preserving, compact) |
-| Interactive dashboard | `dashboard/dashboard.py` -- Streamlit + Plotly, cached loading, seven analytical views |
+| Interactive dashboard | `dashboard/dashboard.py` -- Streamlit + Plotly, cached loading, seven analytical views with date/state/payment filters |
 | Reproducibility | Single-command re-execution via `jupyter nbconvert --execute`; dashboard consumes only exported artifacts |
 
 The separation between the analytical notebook (source of truth) and the dashboard (consumption layer) enforces a clean provenance chain: every figure and KPI in the application is derivable from the documented pipeline.
 
-**Running the dashboard**: Local execution via `streamlit run dashboard/dashboard.py` against exported Parquet artifacts.
+### Project Structure
+
+```
+data_analysis_project-dicoding/
+├── notebook.ipynb                  # End-to-end analysis: questions → wrangling → EDA → viz → conclusions
+├── src/
+│   ├── cohort.py                   # CohortAnalyzer: reusable cohort retention module
+│   └── rfm.py                      # RFMAnalyzer: reusable RFM segmentation module
+├── data/
+│   └── E-Commerce_Public_Dataset/  # Raw Olist CSV files (9 tables)
+├── dashboard/
+│   ├── dashboard.py                # Streamlit application
+│   └── data/                       # Parquet exports consumed by the dashboard
+│       ├── master_df.parquet, delivered_df.parquet, rfm.parquet,
+│       ├── cohort_retention.parquet, cohort_sizes.parquet, ...
+│       └── *.png                   # Static figures exported for reference
+├── requirements.txt                # Python dependencies
+└── README.md
+```
+
+### Setup & Reproduction
+
+**1. Create a virtual environment and install dependencies**
+
+```bash
+python -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**2. Obtain the raw dataset**
+
+Download the [Olist Public Dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) and place the nine CSV files under `data/E-Commerce_Public_Dataset/` (see `notebook.ipynb`, *Gathering Data*, for the expected filenames).
+
+**3. Generate the dashboard data (if `dashboard/data/*.parquet` is missing)**
+
+The Parquet exports are produced by executing the notebook, which performs the full wrangling pipeline and writes every table consumed by the dashboard:
+
+```bash
+jupyter nbconvert --to notebook --execute --inplace notebook.ipynb
+```
+
+This regenerates `master_df`, `delivered_df`, `monthly_revenue`, `category_stats`, `delivery_stats`, `state_revenue`, `review_delivery`, `rfm`, `cohort_retention`, `cohort_sizes`, and the PNG figures under `dashboard/data/`.
+
+**4. Run the dashboard**
+
+```bash
+streamlit run dashboard/dashboard.py
+```
+
+The application loads the Parquet artifacts relative to `dashboard/dashboard.py` and exposes interactive filters (transaction-month range, customer-state selection, payment-type selection) that recompute the underlying aggregations before rendering each chart.
 
 ## Limitations
 

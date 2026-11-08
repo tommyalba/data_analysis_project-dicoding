@@ -116,16 +116,32 @@ st.divider()
 if page == "Revenue & Trends":
     st.header("Revenue & Order Volume Trends")
     st.markdown(
-        "_How has monthly revenue and order volume evolved, "
-        "and is there a seasonal pattern?_"
+        "_How has monthly revenue (BRL) and order volume evolved from "
+        "Oct 2016 – Aug 2018, is there a seasonal pattern, and what does "
+        "this imply for campaign timing and inventory planning?_"
     )
+
+    # ── Interactive filter: month range ──────────────────────────────────
+    months = sorted(monthly["purchase_year_month"].astype(str).unique())
+    fcol1, fcol2 = st.columns(2)
+    with fcol1:
+        m_from = st.selectbox("From month", months, index=0, key="rev_from")
+    with fcol2:
+        m_to = st.selectbox("To month", months, index=len(months) - 1, key="rev_to")
+    if m_from > m_to:
+        m_from, m_to = m_to, m_from
+    monthly_f = monthly[
+        monthly["purchase_year_month"].astype(str).between(m_from, m_to)
+    ].copy()
+    st.caption(f"Showing {m_from} → {m_to} "
+               f"({len(monthly_f)} of {len(monthly)} months)")
 
     # ── Dual-axis monthly chart ───────────────────────────────────────────
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(
         go.Bar(
-            x=monthly["purchase_year_month"],
-            y=monthly["total_revenue"],
+            x=monthly_f["purchase_year_month"],
+            y=monthly_f["total_revenue"],
             name="Total Revenue (BRL)",
             marker_color=PRIMARY,
             opacity=0.82,
@@ -134,8 +150,8 @@ if page == "Revenue & Trends":
     )
     fig.add_trace(
         go.Scatter(
-            x=monthly["purchase_year_month"],
-            y=monthly["orders"],
+            x=monthly_f["purchase_year_month"],
+            y=monthly_f["orders"],
             name="Order Count",
             mode="lines+markers",
             line=dict(color=SECONDARY, width=3),
@@ -144,7 +160,7 @@ if page == "Revenue & Trends":
         secondary_y=True,
     )
     # Annotate Black Friday
-    nov17 = monthly[monthly["purchase_year_month"] == "2017-11"]
+    nov17 = monthly_f[monthly_f["purchase_year_month"] == "2017-11"]
     if not nov17.empty:
         fig.add_annotation(
             x="2017-11",
@@ -170,7 +186,7 @@ if page == "Revenue & Trends":
     c1, c2 = st.columns(2)
     with c1:
         fig2 = px.line(
-            monthly, x="purchase_year_month", y="avg_order_value",
+            monthly_f, x="purchase_year_month", y="avg_order_value",
             title="Average Order Value per Month",
             markers=True,
             color_discrete_sequence=[PRIMARY],
@@ -184,7 +200,9 @@ if page == "Revenue & Trends":
     with c2:
         # Purchase hour heatmap
         hour_dow = (
-            delivered
+            delivered[
+                delivered["purchase_year_month"].astype(str).between(m_from, m_to)
+            ]
             .drop_duplicates("order_id")
             .groupby(["purchase_dow", "purchase_hour"])["order_id"]
             .nunique()
@@ -206,7 +224,7 @@ if page == "Revenue & Trends":
         st.plotly_chart(fig3, use_container_width=True)
 
     # ── Insight callout ───────────────────────────────────────────────────
-    peak = monthly.loc[monthly["total_revenue"].idxmax()]
+    peak = monthly_f.loc[monthly_f["total_revenue"].idxmax()]
     peak_hour = int(hour_dow.groupby("purchase_hour")["orders"].sum().idxmax())
     st.info(
         f"**Peak month:** {peak['purchase_year_month']} — "
@@ -221,9 +239,10 @@ if page == "Revenue & Trends":
 elif page == "Product Categories":
     st.header("Product Categories — Revenue vs Satisfaction")
     st.markdown(
-        "_Which categories generate the most revenue, "
-        "and do the top-revenue categories also achieve a mean review "
-        "score of at least 4.0 out of 5?_"
+        "_Which categories generated the most revenue during Oct 2016 – "
+        "Aug 2018, did top-revenue categories achieve a mean review score "
+        "of at least 4.0 out of 5, and which need quality/logistics "
+        "intervention?_"
     )
 
     n_cats = st.slider("Number of categories to show", 5, 30, 15)
@@ -304,15 +323,25 @@ elif page == "Product Categories":
 elif page == "Delivery Performance":
     st.header("Delivery Performance vs Customer Satisfaction")
     st.markdown(
-        "_How does on-time delivery vary by state, "
-        "and does being late directly hurt review scores?_"
+        "_How did late-delivery rate (%) and average delivery days differ "
+        "across Brazilian states during Oct 2016 – Aug 2018, what was the "
+        "review-score gap between late and on-time orders, and which states "
+        "need logistics SLA enforcement?_"
     )
+
+    # ── Interactive filter: states ───────────────────────────────────────
+    all_states = sorted(delivery["customer_state"].unique())
+    sel_states = st.multiselect(
+        "Filter states", all_states, default=all_states, key="del_states"
+    ) or all_states
+    delivery_f = delivery[delivery["customer_state"].isin(sel_states)]
+    st.caption(f"{len(delivery_f)} of {len(delivery)} states selected")
 
     c1, c2 = st.columns(2)
 
     with c1:
         fig = px.bar(
-            delivery.sort_values("late_rate", ascending=False),
+            delivery_f.sort_values("late_rate", ascending=False),
             x="customer_state", y="late_rate",
             color="avg_delivery_days",
             color_continuous_scale="RdYlGn_r",
@@ -330,17 +359,17 @@ elif page == "Delivery Performance":
             coloraxis_colorbar_title="Avg<br>Days",
         )
         fig.add_hline(
-            y=delivery["late_rate"].mean(),
+            y=delivery_f["late_rate"].mean(),
             line_dash="dot",
             line_color="gray",
-            annotation_text=f"Avg {delivery['late_rate'].mean()*100:.1f}%",
+            annotation_text=f"Avg {delivery_f['late_rate'].mean()*100:.1f}%",
             annotation_position="bottom right",
         )
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
         fig2 = px.scatter(
-            delivery,
+            delivery_f,
             x="avg_delivery_days", y="avg_review_score",
             size="orders",
             color="late_rate",
@@ -362,7 +391,9 @@ elif page == "Delivery Performance":
     st.subheader("Review Score Distribution by Delivery Timing")
 
     delay_df = (
-        delivered
+        delivered[
+            delivered["customer_state"].isin(sel_states)
+        ]
         .drop_duplicates("order_id")
         .dropna(subset=["review_score", "delivery_delay_days"])
         .copy()
@@ -396,8 +427,8 @@ elif page == "Delivery Performance":
     fig3.update_layout(height=340, yaxis_tickformat=".0%")
     st.plotly_chart(fig3, use_container_width=True)
 
-    worst  = delivery.iloc[0]
-    fastest = delivery.sort_values("avg_delivery_days").iloc[0]
+    worst  = delivery_f.iloc[0]
+    fastest = delivery_f.sort_values("avg_delivery_days").iloc[0]
     late_orders = delay_df[delay_df["delivery_delay_days"] > 0]["review_score"].mean()
     early_orders = delay_df[delay_df["delivery_delay_days"] <= 0]["review_score"].mean()
     st.info(
@@ -415,15 +446,25 @@ elif page == "Delivery Performance":
 elif page == "Geographic Analysis":
     st.header("Geographic Distribution of Revenue")
     st.markdown(
-        "_Where are customers and revenue concentrated, "
-        "and which states are under-served?_"
+        "_What share of customers and revenue was concentrated in each "
+        "Brazilian state during Oct 2016 – Aug 2018, which states were "
+        "under-served (< 1% revenue share), and where should seller "
+        "recruitment and marketing spend be directed?_"
     )
+
+    # ── Interactive filter: states ───────────────────────────────────────
+    all_states_geo = sorted(state["customer_state"].unique())
+    sel_states_geo = st.multiselect(
+        "Filter states", all_states_geo, default=all_states_geo, key="geo_states"
+    ) or all_states_geo
+    state_f = state[state["customer_state"].isin(sel_states_geo)]
+    st.caption(f"{len(state_f)} of {len(state)} states selected")
 
     c1, c2 = st.columns([2, 1])
 
     with c1:
         fig = px.scatter_geo(
-            state,
+            state_f,
             lat="avg_lat", lon="avg_lng",
             size="total_revenue",
             color="total_revenue",
@@ -449,8 +490,8 @@ elif page == "Geographic Analysis":
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
-        total = state["total_revenue"].sum()
-        state_pct = state.copy()
+        total = state_f["total_revenue"].sum()
+        state_pct = state_f.copy()
         state_pct["share_pct"] = (state_pct["total_revenue"] / total * 100).round(2)
         fig2 = px.bar(
             state_pct.sort_values("total_revenue", ascending=True).tail(10),
@@ -471,7 +512,7 @@ elif page == "Geographic Analysis":
 
     # ── Treemap ───────────────────────────────────────────────────────────
     fig3 = px.treemap(
-        state,
+        state_f,
         path=["customer_state"],
         values="total_revenue",
         color="total_revenue",
@@ -483,19 +524,23 @@ elif page == "Geographic Analysis":
     fig3.update_layout(height=360)
     st.plotly_chart(fig3, use_container_width=True)
 
-    sp_share = (
-        state[state["customer_state"] == "SP"]["total_revenue"].values[0] / total * 100
-    )
-    sp_cust_share = (
-        state[state["customer_state"] == "SP"]["total_customers"].values[0]
-        / state["total_customers"].sum() * 100
-    )
-    top3 = state.head(3)["total_revenue"].sum() / total * 100
-    small = (state["total_revenue"] / total < 0.01).sum()
+    if "SP" in sel_states_geo:
+        sp_share = (
+            state_f[state_f["customer_state"] == "SP"]["total_revenue"].values[0]
+            / total * 100
+        )
+        sp_cust_share = (
+            state_f[state_f["customer_state"] == "SP"]["total_customers"].values[0]
+            / state_f["total_customers"].sum() * 100
+        )
+        sp_txt = f"**SP** accounts for **{sp_share:.1f}%** of revenue and **{sp_cust_share:.1f}%** of customers.  "
+    else:
+        sp_txt = ""
+    top3 = state_f.head(3)["total_revenue"].sum() / total * 100
+    small = (state_f["total_revenue"] / total < 0.01).sum()
     st.info(
-        f"**SP** accounts for **{sp_share:.1f}%** of revenue and "
-        f"**{sp_cust_share:.1f}%** of customers.  "
-        f"Top 3 states (SP, RJ, MG) = **{top3:.1f}%** combined revenue.  "
+        f"{sp_txt}"
+        f"Top 3 states within selection = **{top3:.1f}%** combined revenue.  "
         f"**{small} states** each contribute less than 1%."
     )
 
@@ -506,11 +551,34 @@ elif page == "Geographic Analysis":
 elif page == "Payment Behaviour":
     st.header("Payment Behaviour")
     st.markdown(
-        "_What payment types dominate, and do customers paying in 12 "
-        "installments spend more than single-payment buyers?_"
+        "_What was the payment-type distribution by order volume during "
+        "Oct 2016 – Aug 2018, how much larger was the average spend of "
+        "customers paying in 12 installments vs. 1 installment, and should "
+        "installment financing be expanded at checkout?_"
     )
 
-    orders_pay = delivered.drop_duplicates("order_id").copy()
+    orders_pay_all = delivered.drop_duplicates("order_id").copy()
+
+    # ── Interactive filter: payment types ────────────────────────────────
+    all_ptypes = sorted(
+        {
+            t
+            for s in orders_pay_all["payment_types"].dropna()
+            for t in s.split(", ")
+        }
+    )
+    sel_ptypes = st.multiselect(
+        "Filter payment types", all_ptypes, default=all_ptypes, key="pay_types"
+    ) or all_ptypes
+    orders_pay = orders_pay_all[
+        orders_pay_all["payment_types"].apply(
+            lambda s: any(t in s.split(", ") for t in sel_ptypes)
+        )
+    ].copy()
+    st.caption(
+        f"{orders_pay['order_id'].nunique():,} of "
+        f"{orders_pay_all['order_id'].nunique():,} orders match the filter"
+    )
 
     # ── Payment type donut ────────────────────────────────────────────────
     pay_expanded = (
@@ -608,17 +676,21 @@ elif page == "Payment Behaviour":
     fig3.update_layout(height=340)
     st.plotly_chart(fig3, use_container_width=True)
 
+    cc_rows = pay_expanded[pay_expanded["payment_type"] == "credit_card"]
     cc_share = (
-        pay_expanded[pay_expanded["payment_type"] == "credit_card"]["count"].values[0]
-        / pay_expanded["count"].sum() * 100
+        cc_rows["count"].values[0] / pay_expanded["count"].sum() * 100
+        if len(cc_rows) else 0.0
     )
     v1  = cc_df[cc_df["payment_installments"] == 1]["payment_total_value"].mean()
     v12 = cc_df[cc_df["payment_installments"] == 12]["payment_total_value"].mean()
-    st.info(
-        f"**Credit card** dominates at **{cc_share:.1f}%** of transactions.  "
-        f"12-installment buyers spend **{v12/v1:.1f}×** more than single-payment buyers "
-        f"(BRL {v12:.0f} vs BRL {v1:.0f})."
-    )
+    if pd.notna(v1) and pd.notna(v12) and v1:
+        insight = (
+            f"12-installment buyers spend **{v12/v1:.1f}×** more than "
+            f"single-payment buyers (BRL {v12:.0f} vs BRL {v1:.0f})."
+        )
+    else:
+        insight = "Credit-card installment comparison unavailable for this filter."
+    st.info(f"**Credit card** share of filtered orders: **{cc_share:.1f}%**.  {insight}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -628,7 +700,8 @@ elif page == "RFM Segmentation":
     st.header("RFM Customer Segmentation")
     st.markdown(
         f"_Recency · Frequency · Monetary segmentation "
-        f"of {len(rfm):,} unique customers._"
+        f"of {len(rfm):,} unique customers — computed over the full "
+        "Oct 2016 – Aug 2018 analysis base._"
     )
 
     seg_summary = (
@@ -746,7 +819,8 @@ elif page == "Cohort Retention":
     st.header("Cohort Retention Analysis")
     st.markdown(
         "_When customers buy again after their first purchase — "
-        "and how quickly retention decays._"
+        "and how quickly retention decays. Computed over the full "
+        "Oct 2016 – Aug 2018 analysis base._"
     )
 
     # cohort_retention.parquet contains eligible cohorts only (>= 50 customers
