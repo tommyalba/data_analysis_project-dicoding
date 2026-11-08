@@ -11,6 +11,7 @@ Data:      dashboard/data/*.parquet  (exported from notebook.ipynb)
 import os
 import warnings; warnings.filterwarnings("ignore")
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -41,6 +42,8 @@ def load_data():
     rfm      = pd.read_parquet(f"{DATA_DIR}/rfm.parquet")
     cohort   = pd.read_parquet(f"{DATA_DIR}/cohort_retention.parquet")
     cohort_sizes = pd.read_parquet(f"{DATA_DIR}/cohort_sizes.parquet")
+    churn    = pd.read_parquet(f"{DATA_DIR}/churn_scores.parquet")
+    churn_met = pd.read_parquet(f"{DATA_DIR}/churn_metrics.parquet")
     delivered = pd.read_parquet(
         f"{DATA_DIR}/delivered_df.parquet",
         columns=[
@@ -53,10 +56,12 @@ def load_data():
             "review_score", "revenue", "price", "freight_value",
         ],
     )
-    return monthly, category, delivery, state, review, rfm, cohort, cohort_sizes, delivered
+    return (monthly, category, delivery, state, review, rfm, cohort,
+            cohort_sizes, delivered, churn, churn_met)
 
 
-monthly, category, delivery, state, review, rfm, cohort, cohort_sizes, delivered = load_data()
+(monthly, category, delivery, state, review, rfm, cohort, cohort_sizes,
+ delivered, churn, churn_met) = load_data()
 
 # ── Colour palette ────────────────────────────────────────────────────────────
 PRIMARY   = "#4C72B0"
@@ -85,6 +90,7 @@ with st.sidebar:
             "Payment Behaviour",
             "RFM Segmentation",
             "Cohort Retention",
+            "Churn & Next-Purchase",
         ],
         label_visibility="collapsed",
     )
@@ -961,3 +967,100 @@ elif page == "Cohort Retention":
 
     with st.expander("Raw cohort retention table (%)"):
         st.dataframe(ret_pct.style.background_gradient(cmap="YlOrRd_r", vmin=0, vmax=5))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PAGE 8 — CHURN & NEXT-PURCHASE PROPENSITY
+# ═════════════════════════════════════════════════════════════════════════════
+elif page == "Churn & Next-Purchase":
+    st.header("Next-Purchase Propensity")
+    st.markdown(
+        "_Which customers are most likely to buy again within 90 days of the "
+        "**2018-05-31 landmark** — ranked by a gradient-boosting classifier "
+        "trained only on pre-landmark behaviour (orders so far, spend, "
+        "recency, tenure, category diversity, payment usage, state, "
+        "review/delivery experience). Scores are as-of the landmark, not today._"
+    )
+
+    cm = churn_met.iloc[0]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("ROC-AUC", f"{cm['roc_auc']:.3f}")
+    c2.metric("PR-AUC", f"{cm['pr_auc']:.4f}",
+              delta=f"{cm['pr_auc']/cm['baseline_pr_auc']:.1f}× baseline")
+    c3.metric("Label window", "90 days")
+    c4.metric("Customers scored", f"{len(churn):,}")
+    st.caption(
+        f"Landmark {cm['landmark']} · positive rate "
+        f"{cm['positive_rate']:.2%} · model: HistGradientBoosting "
+        "(features strictly before landmark, label strictly after)"
+    )
+
+    seg_sel = st.multiselect(
+        "RFM segment",
+        sorted(churn["segment"].dropna().unique().tolist()),
+        default=sorted(churn["segment"].dropna().unique().tolist()),
+    )
+    churn_f = churn[churn["segment"].isin(seg_sel)].copy()
+    st.caption(f"{len(churn_f):,} of {len(churn):,} customers selected")
+
+    churn_f["log_p"] = np.log10(churn_f["p_repeat_90d"].clip(lower=1e-6))
+
+    col_l, col_r = st.columns(2)
+    with col_l:
+        fig_h = px.histogram(
+            churn_f, x="log_p", nbins=60,
+            labels={"log_p": "log10(p repeat ≤ 90d)"},
+            title="Propensity Distribution",
+            template=TEMPLATE,
+            color_discrete_sequence=[PRIMARY],
+        )
+        fig_h.add_vline(x=np.log10(0.01), line_dash="dash",
+                        line_color=SECONDARY,
+                        annotation_text="p = 1%", annotation_position="top left")
+        fig_h.update_layout(height=340, showlegend=False)
+        st.plotly_chart(fig_h, use_container_width=True)
+
+    with col_r:
+        seg_bar = (churn_f.groupby("segment")["p_repeat_90d"]
+                   .mean().sort_values(ascending=True) * 100)
+        fig_s = px.bar(
+            x=seg_bar.values, y=seg_bar.index,
+            orientation="h",
+            labels={"x": "Mean p(repeat ≤ 90d) — %", "y": ""},
+            title="Mean Propensity by RFM Segment",
+            template=TEMPLATE,
+            color_discrete_sequence=[PRIMARY],
+            text=[f"{v:.2f}%" for v in seg_bar.values],
+        )
+        fig_s.update_traces(textposition="outside", textfont_size=10)
+        fig_s.update_layout(height=340, showlegend=False)
+        st.plotly_chart(fig_s, use_container_width=True)
+
+    hi = (churn_f["p_repeat_90d"] >= 0.01).sum()
+    vhi = (churn_f["p_repeat_90d"] >= 0.02).sum()
+    st.info(
+        f"**{hi:,} customers** score p ≥ 1% and **{vhi:,}** score p ≥ 2% — "
+        "the prioritised outreach queue. Absolute probabilities are low "
+        "because only ~0.5% of customers repurchase within a quarter; "
+        "the model's value is *ranking* (top 1% repurchases at ~30× the "
+        "baseline rate), not absolute prediction."
+    )
+
+    st.subheader("Top 20 highest-propensity customers")
+    top20 = (churn_f.sort_values("p_repeat_90d", ascending=False)
+             .head(20).copy())
+    top20["customer_unique_id"] = top20["customer_unique_id"].str[:8] + "…"
+    top20["p_repeat_90d"] = (top20["p_repeat_90d"] * 100).round(2)
+    top20["total_spend"] = top20["total_spend"].round(0)
+    st.dataframe(
+        top20[["customer_unique_id", "segment", "p_repeat_90d",
+               "orders_so_far", "recency_days", "total_spend"]]
+        .rename(columns={
+            "customer_unique_id": "Customer",
+            "p_repeat_90d": "p(repeat≤90d) %",
+            "orders_so_far": "Orders so far",
+            "recency_days": "Days since last",
+            "total_spend": "Total spend (BRL)",
+        }),
+        use_container_width=True, hide_index=True,
+    )

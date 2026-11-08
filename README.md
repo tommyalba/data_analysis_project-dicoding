@@ -44,22 +44,23 @@ The principal empirical findings are:
 
 These findings are synthesized into six conclusions and a prioritized set of action items (e.g., SLA enforcement in north-eastern states, re-engagement of the ~22,000-customer "At Risk" RFM segment, loyalty-loop design, and geographic seller recruitment).
 
-### 4. Customer Lifetime Value Modelling: RFM, Cohort, and Cluster Analysis
+### 4. Customer Analytics: RFM, Cohort, Cluster & Churn
 
 Beyond descriptive statistics, the project implements two complementary techniques for customer-base diagnosis:
 
 - **RFM segmentation** scores each of 93,357 customers on recency, frequency, and monetary value, yielding actionable tiers — Champions, Loyal Customers, At Risk, and Lost — that translate directly into differentiated retention strategies.
 - **Cohort retention analysis** tracks monthly acquisition cohorts over up to 21 periods, masking unobserved future periods as missing rather than zero (a methodological choice that preserves the distinction between "no repeat purchase" and "not yet observable"). Diagnostics restrict inference to cohorts with ≥50 customers at acquisition to avoid small-sample distortion.
 - **Unsupervised K-means segmentation** complements the rule-based tiers with data-driven clusters over `log1p`-transformed, `StandardScaler`-standardised RFM features. Cluster count is selected via SSE elbow and silhouette evidence, profiles are interpreted on the raw scale, and cluster-vs-rule agreement is cross-tabulated as a sanity check.
+- **Next-purchase propensity modelling** scores every customer with a gradient-boosting classifier using a strict **landmark design** — features are strictly pre-2018-05-31 behaviour (orders so far, spend, recency, tenure, category diversity, payment usage, state, review/delivery experience) and the label is any purchase within the following 90 days, so no feature can leak its own outcome. Overall discrimination is modest (ROC-AUC 0.55), but the ranking is strong: the top 1% of scores repurchases at ~30× the baseline rate, yielding a ~3,200-customer prioritised outreach queue.
 
 ## Technical Implementation
 
 | Component | Technology |
 |---|---|
 | Analysis pipeline | `notebook.ipynb` -- pandas, numpy, seaborn, matplotlib, plotly |
-| Reusable analytics modules | `src/cohort.py`, `src/rfm.py`, `src/cluster.py`, `src/forecast.py` -- cohort retention, RFM, K-means clustering, and short-horizon forecasting, dataset-agnostic |
+| Reusable analytics modules | `src/cohort.py`, `src/rfm.py`, `src/cluster.py`, `src/forecast.py`, `src/churn.py` -- cohort retention, RFM, K-means clustering, forecasting, and next-purchase prediction, dataset-agnostic |
 | Data exports | Parquet files under `dashboard/data/` (dtype-preserving, compact) |
-| Interactive dashboard | `dashboard/dashboard.py` -- Streamlit + Plotly, cached loading, seven analytical views with date/state/payment filters |
+| Interactive dashboard | `dashboard/dashboard.py` -- Streamlit + Plotly, cached loading, eight analytical views with date/state/payment/segment filters |
 | Reproducibility | Single-command re-execution via `jupyter nbconvert --execute`; dashboard consumes only exported artifacts |
 
 The separation between the analytical notebook (source of truth) and the dashboard (consumption layer) enforces a clean provenance chain: every figure and KPI in the application is derivable from the documented pipeline.
@@ -73,7 +74,8 @@ data_analysis_project-dicoding/
 │   ├── cohort.py                   # CohortAnalyzer: reusable cohort retention module
 │   ├── rfm.py                      # RFMAnalyzer: reusable RFM segmentation module
 │   ├── cluster.py                  # ClusterAnalyzer: reusable K-means segmentation module
-│   └── forecast.py                 # Forecaster: reusable backtest-and-forecast module
+│   ├── forecast.py                 # Forecaster: reusable backtest-and-forecast module
+│   └── churn.py                    # ChurnAnalyzer: reusable next-purchase classifier
 ├── data/
 │   └── E-Commerce_Public_Dataset/  # Raw Olist CSV files (9 tables)
 ├── dashboard/
@@ -135,7 +137,7 @@ The current pipeline is deliberately descriptive-prescriptive; several methodolo
 
 3. **Causal inference for delivery interventions.** The late-delivery/review-score relationship invites quasi-experimental designs -- difference-in-differences around logistics improvements, regression discontinuity at estimated-delivery thresholds, or instrumental-variable approaches exploiting exogenous distance/shipping-lane variation -- to move from association to actionable causal estimates of SLA enforcement.
 
-4. **Churn and next-purchase prediction.** With 96.9% one-time buyers, a supervised classifier (e.g., gradient boosting on RFM, category, and payment features) could rank customers by reactivation propensity, converting the descriptive "At Risk" segment into a prioritized outreach queue. Survival analysis (Cox proportional hazards or parametric AFT models) would additionally model *when* customers are likely to return.
+4. **Stronger churn models.** The implemented landmark classifier proves the ranking concept but leaves headroom: richer features (review text sentiment, browsing/cart signals if available, seller quality), probability calibration, survival analysis to model *when* customers return rather than *whether*, gradient-boosted survival or discrete-time hazard models, and — critically — an A/B or holdout campaign to validate that outreach to the top-decile queue actually lifts repurchase rates before scaling spend.
 
 5. **Marketplace mechanism design.** Seller-level analysis -- fulfillment latency, review quality, and category specialization -- could support recommendation systems for buyer-seller matching, pricing experiments via uplift modelling, and fairness audits of geographic and category exposure.
 
