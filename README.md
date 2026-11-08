@@ -43,19 +43,20 @@ The principal empirical findings are:
 
 These findings are synthesized into six conclusions and a prioritized set of action items (e.g., SLA enforcement in north-eastern states, re-engagement of the ~22,000-customer "At Risk" RFM segment, loyalty-loop design, and geographic seller recruitment).
 
-### 4. Customer Lifetime Value Modelling: RFM and Cohort Analysis
+### 4. Customer Lifetime Value Modelling: RFM, Cohort, and Cluster Analysis
 
 Beyond descriptive statistics, the project implements two complementary techniques for customer-base diagnosis:
 
 - **RFM segmentation** scores each of 93,357 customers on recency, frequency, and monetary value, yielding actionable tiers — Champions, Loyal Customers, At Risk, and Lost — that translate directly into differentiated retention strategies.
 - **Cohort retention analysis** tracks monthly acquisition cohorts over up to 21 periods, masking unobserved future periods as missing rather than zero (a methodological choice that preserves the distinction between "no repeat purchase" and "not yet observable"). Diagnostics restrict inference to cohorts with ≥50 customers at acquisition to avoid small-sample distortion.
+- **Unsupervised K-means segmentation** complements the rule-based tiers with data-driven clusters over `log1p`-transformed, `StandardScaler`-standardised RFM features. Cluster count is selected via SSE elbow and silhouette evidence, profiles are interpreted on the raw scale, and cluster-vs-rule agreement is cross-tabulated as a sanity check.
 
 ## Technical Implementation
 
 | Component | Technology |
 |---|---|
 | Analysis pipeline | `notebook.ipynb` -- pandas, numpy, seaborn, matplotlib, plotly |
-| Reusable analytics modules | `src/cohort.py`, `src/rfm.py` -- cohort retention and RFM segmentation, dataset-agnostic |
+| Reusable analytics modules | `src/cohort.py`, `src/rfm.py`, `src/cluster.py` -- cohort retention, RFM segmentation, and K-means clustering, dataset-agnostic |
 | Data exports | Parquet files under `dashboard/data/` (dtype-preserving, compact) |
 | Interactive dashboard | `dashboard/dashboard.py` -- Streamlit + Plotly, cached loading, seven analytical views with date/state/payment filters |
 | Reproducibility | Single-command re-execution via `jupyter nbconvert --execute`; dashboard consumes only exported artifacts |
@@ -69,7 +70,8 @@ data_analysis_project-dicoding/
 ├── notebook.ipynb                  # End-to-end analysis: questions → wrangling → EDA → viz → conclusions
 ├── src/
 │   ├── cohort.py                   # CohortAnalyzer: reusable cohort retention module
-│   └── rfm.py                      # RFMAnalyzer: reusable RFM segmentation module
+│   ├── rfm.py                      # RFMAnalyzer: reusable RFM segmentation module
+│   └── cluster.py                  # ClusterAnalyzer: reusable K-means segmentation module
 ├── data/
 │   └── E-Commerce_Public_Dataset/  # Raw Olist CSV files (9 tables)
 ├── dashboard/
@@ -79,7 +81,8 @@ data_analysis_project-dicoding/
 │       ├── cohort_retention.parquet, cohort_sizes.parquet, ...
 │       └── *.png                   # Static figures exported for reference
 │                                   # (parquets are committed so the app deploys out-of-the-box)
-├── requirements.txt                # Python dependencies
+├── requirements.txt                # Python dependencies (dashboard + core pipeline)
+├── requirements-analysis.txt       # Adds scikit-learn for the K-means clustering step
 └── README.md
 ```
 
@@ -90,7 +93,8 @@ data_analysis_project-dicoding/
 ```bash
 python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-analysis.txt   # full notebook (includes scikit-learn)
+# or: pip install -r requirements.txt       # dashboard only
 ```
 
 **2. Obtain the raw dataset**
@@ -123,7 +127,7 @@ Several constraints qualify the inference. The observation window (~22 months) i
 
 The current pipeline is deliberately descriptive-prescriptive; several methodological extensions would deepen its analytical reach:
 
-1. **Unsupervised customer segmentation.** The rule-based RFM tiers could be complemented or replaced by clustering algorithms -- k-means or Gaussian mixture models on scaled RFM features, or density-based methods (DBSCAN/HDBSCAN) capable of discovering non-convex segment structures. Cluster stability should be assessed via internal indices (silhouette, Calinski–Harabasz) and bootstrap resampling, and segments validated against downstream outcomes (repeat-purchase rates, revenue contribution) before operationalization.
+1. **Cluster validation and alternative methods.** The implemented K-means segmentation establishes a baseline; remaining work is *validation* rather than basic clustering: stability assessment via bootstrap resampling and internal indices beyond silhouette (Calinski–Harabasz, Davies–Bouldin), comparison against alternative algorithms (Gaussian mixtures, DBSCAN/HDBSCAN for non-convex structures), and downstream validation of segments against repeat-purchase rates and revenue contribution before operationalization.
 
 2. **Time-series forecasting.** Monthly revenue and order volume exhibit trend, the November seasonal spike, and platform-growth dynamics suitable for decomposition (STL) followed by SARIMAX or state-space (ETS/Prophet-class) models, or gradient-boosted approaches (LightGBM with calendar covariates). Forecasts would enable inventory, logistics-capacity, and promotional-budget planning; backtesting on a held-out tail would be essential given the short series.
 
