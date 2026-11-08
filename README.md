@@ -78,6 +78,7 @@ data_analysis_project-dicoding/
 │       ├── master_df.parquet, delivered_df.parquet, rfm.parquet,
 │       ├── cohort_retention.parquet, cohort_sizes.parquet, ...
 │       └── *.png                   # Static figures exported for reference
+│                                   # (parquets are committed so the app deploys out-of-the-box)
 ├── requirements.txt                # Python dependencies
 └── README.md
 ```

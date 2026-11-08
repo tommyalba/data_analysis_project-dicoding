@@ -39,10 +39,10 @@ env/
 # =====================================
 # Data & Large Files (Data Science Specific)
 # =====================================
-data/
-data/raw/
-data/processed/
-data/external/
+/data/
+/data/raw/
+/data/processed/
+/data/external/
 *.csv
 *.parquet
 *.feather
@@ -55,6 +55,12 @@ data/external/
 *.weights
 *.onnx
 *.bin
+
+# Dashboard Parquet exports are required by the deployed Streamlit app.
+# master_df.parquet is notebook-internal only (not loaded by dashboard.py).
+!dashboard/data/
+!dashboard/data/*.parquet
+dashboard/data/master_df.parquet
 
 # Save the local model training output/logs folder
 outputs/

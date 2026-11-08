@@ -121,19 +121,40 @@ if page == "Revenue & Trends":
         "this imply for campaign timing and inventory planning?_"
     )
 
-    # ── Interactive filter: month range ──────────────────────────────────
-    months = sorted(monthly["purchase_year_month"].astype(str).unique())
-    fcol1, fcol2 = st.columns(2)
-    with fcol1:
-        m_from = st.selectbox("From month", months, index=0, key="rev_from")
-    with fcol2:
-        m_to = st.selectbox("To month", months, index=len(months) - 1, key="rev_to")
-    if m_from > m_to:
-        m_from, m_to = m_to, m_from
+    # ── Interactive filter: transaction date range ───────────────────────
+    ts_min = delivered["order_purchase_timestamp"].min().date()
+    ts_max = delivered["order_purchase_timestamp"].max().date()
+    try:
+        d_range = st.date_input(
+            "Transaction date range",
+            value=(ts_min, ts_max),
+            min_value=ts_min,
+            max_value=ts_max,
+            key="rev_dates",
+        )
+        if len(d_range) == 2:
+            d_from, d_to = d_range
+        else:
+            st.warning(
+                "Please select both a **start date** and an **end date** "
+                "to filter the data. Showing the full period for now."
+            )
+            d_from, d_to = ts_min, ts_max
+    except Exception:
+        st.warning(
+            "Invalid date range — showing the full period "
+            "(Oct 2016 – Aug 2018)."
+        )
+        d_from, d_to = ts_min, ts_max
+
+    # Monthly chart works at month granularity; heatmap uses exact timestamps
+    m_from, m_to = d_from.strftime("%Y-%m"), d_to.strftime("%Y-%m")
+    ts_from = pd.Timestamp(d_from)
+    ts_to   = pd.Timestamp(d_to) + pd.Timedelta(days=1)
     monthly_f = monthly[
         monthly["purchase_year_month"].astype(str).between(m_from, m_to)
     ].copy()
-    st.caption(f"Showing {m_from} → {m_to} "
+    st.caption(f"Showing {d_from} → {d_to} "
                f"({len(monthly_f)} of {len(monthly)} months)")
 
     # ── Dual-axis monthly chart ───────────────────────────────────────────
@@ -201,7 +222,7 @@ if page == "Revenue & Trends":
         # Purchase hour heatmap
         hour_dow = (
             delivered[
-                delivered["purchase_year_month"].astype(str).between(m_from, m_to)
+                delivered["order_purchase_timestamp"].between(ts_from, ts_to)
             ]
             .drop_duplicates("order_id")
             .groupby(["purchase_dow", "purchase_hour"])["order_id"]
@@ -245,8 +266,14 @@ elif page == "Product Categories":
         "intervention?_"
     )
 
+    # ── Interactive filters: categories + top-N ──────────────────────────
+    all_cats = sorted(category["product_category_name"].dropna().unique())
+    sel_cats = st.multiselect(
+        "Filter categories", all_cats, default=all_cats, key="cat_filter"
+    ) or all_cats
+    cat_f = category[category["product_category_name"].isin(sel_cats)]
     n_cats = st.slider("Number of categories to show", 5, 30, 15)
-    top = category.head(n_cats).copy()
+    top = cat_f.head(n_cats).copy()
 
     c1, c2 = st.columns(2)
     with c1:
@@ -254,18 +281,15 @@ elif page == "Product Categories":
             top.sort_values("total_revenue"),
             x="total_revenue", y="product_category_name",
             orientation="h",
-            color="avg_review",
-            color_continuous_scale="RdYlGn",
-            range_color=[3.5, 4.8],
+            color_discrete_sequence=[PRIMARY],
             labels={
                 "total_revenue": "Total Revenue (BRL)",
                 "product_category_name": "Category",
-                "avg_review": "Avg Review",
             },
             title=f"Top {n_cats} Categories by Revenue",
             template=TEMPLATE,
         )
-        fig.update_layout(height=500, coloraxis_colorbar_title="Review")
+        fig.update_layout(height=500)
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
@@ -273,10 +297,8 @@ elif page == "Product Categories":
             top,
             x="avg_review", y="total_revenue",
             size="total_orders",
-            color="avg_review",
+            color_discrete_sequence=[SECONDARY],
             text="product_category_name",
-            color_continuous_scale="RdYlGn",
-            range_color=[3.5, 4.8],
             labels={
                 "avg_review": "Avg Review Score",
                 "total_revenue": "Total Revenue (BRL)",
@@ -285,6 +307,11 @@ elif page == "Product Categories":
             title="Revenue vs Satisfaction (bubble = order volume)",
             template=TEMPLATE,
         )
+        fig2.add_vline(
+            x=4.0, line_dash="dash", line_color="gray",
+            annotation_text="Satisfaction threshold (4.0)",
+            annotation_position="top left",
+        )
         fig2.update_traces(textposition="top center", textfont_size=8)
         fig2.update_layout(height=500, showlegend=False)
         st.plotly_chart(fig2, use_container_width=True)
@@ -292,7 +319,7 @@ elif page == "Product Categories":
     # ── Full category table ───────────────────────────────────────────────
     with st.expander("Full Category Table"):
         st.dataframe(
-            category.rename(columns={
+            cat_f.rename(columns={
                 "product_category_name": "Category",
                 "total_revenue": "Revenue (BRL)",
                 "total_orders":  "Orders",
@@ -307,13 +334,21 @@ elif page == "Product Categories":
             height=400,
         )
 
-    top1 = category.iloc[0]
-    best_review = category[category["total_orders"] >= 500].nlargest(1, "avg_review").iloc[0]
+    top1 = cat_f.iloc[0]
+    eligible = cat_f[cat_f["total_orders"] >= 500]
+    if len(eligible):
+        best_review = eligible.nlargest(1, "avg_review").iloc[0]
+        best_txt = (
+            f"**Highest satisfaction (≥500 orders):** "
+            f"`{best_review['product_category_name']}` — "
+            f"avg score {best_review['avg_review']:.2f}."
+        )
+    else:
+        best_txt = "No category in the selection has ≥ 500 orders."
     st.info(
         f"**Highest revenue:** `{top1['product_category_name']}` — "
         f"BRL {top1['total_revenue']:,.0f} (review: {top1['avg_review']:.2f}).  "
-        f"**Highest satisfaction (≥500 orders):** `{best_review['product_category_name']}` — "
-        f"avg score {best_review['avg_review']:.2f}."
+        f"{best_txt}"
     )
 
 
@@ -343,12 +378,10 @@ elif page == "Delivery Performance":
         fig = px.bar(
             delivery_f.sort_values("late_rate", ascending=False),
             x="customer_state", y="late_rate",
-            color="avg_delivery_days",
-            color_continuous_scale="RdYlGn_r",
+            color_discrete_sequence=[PRIMARY],
             labels={
                 "customer_state": "State",
                 "late_rate": "Late Delivery Rate",
-                "avg_delivery_days": "Avg Days",
             },
             title="Late Delivery Rate by State",
             template=TEMPLATE,
@@ -356,7 +389,6 @@ elif page == "Delivery Performance":
         fig.update_layout(
             height=380,
             yaxis_tickformat=".0%",
-            coloraxis_colorbar_title="Avg<br>Days",
         )
         fig.add_hline(
             y=delivery_f["late_rate"].mean(),
@@ -372,16 +404,21 @@ elif page == "Delivery Performance":
             delivery_f,
             x="avg_delivery_days", y="avg_review_score",
             size="orders",
-            color="late_rate",
+            color_discrete_sequence=[SECONDARY],
             text="customer_state",
-            color_continuous_scale="RdYlGn_r",
             labels={
                 "avg_delivery_days": "Avg Delivery Days",
                 "avg_review_score":  "Avg Review Score",
-                "late_rate":         "Late Rate",
+                "orders":             "Orders",
             },
             title="Review Score vs Avg Delivery Days per State",
             template=TEMPLATE,
+        )
+        fig2.add_vline(
+            x=delivery_f["avg_delivery_days"].median(),
+            line_dash="dot", line_color="gray",
+            annotation_text="Median delivery days",
+            annotation_position="top left",
         )
         fig2.update_traces(textposition="top center", textfont_size=8)
         fig2.update_layout(height=380, showlegend=False)
@@ -467,8 +504,7 @@ elif page == "Geographic Analysis":
             state_f,
             lat="avg_lat", lon="avg_lng",
             size="total_revenue",
-            color="total_revenue",
-            color_continuous_scale="Blues",
+            color_discrete_sequence=[PRIMARY],
             hover_name="customer_state",
             hover_data={
                 "total_orders":     True,
@@ -486,7 +522,7 @@ elif page == "Geographic Analysis":
             showland=True, landcolor="#f0f0f0",
             showcoastlines=True, coastlinecolor="gray",
         )
-        fig.update_layout(height=520, coloraxis_colorbar_title="Revenue<br>(BRL)")
+        fig.update_layout(height=520)
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
@@ -497,8 +533,8 @@ elif page == "Geographic Analysis":
             state_pct.sort_values("total_revenue", ascending=True).tail(10),
             x="total_revenue", y="customer_state",
             orientation="h",
-            color="share_pct",
-            color_continuous_scale="Blues",
+            color_discrete_sequence=[PRIMARY],
+            text="share_pct",
             labels={
                 "total_revenue": "Revenue (BRL)",
                 "customer_state": "State",
@@ -507,7 +543,8 @@ elif page == "Geographic Analysis":
             title="Top 10 States by Revenue",
             template=TEMPLATE,
         )
-        fig2.update_layout(height=520, coloraxis_colorbar_title="Share %")
+        fig2.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig2.update_layout(height=520)
         st.plotly_chart(fig2, use_container_width=True)
 
     # ── Treemap ───────────────────────────────────────────────────────────
@@ -515,8 +552,7 @@ elif page == "Geographic Analysis":
         state_f,
         path=["customer_state"],
         values="total_revenue",
-        color="total_revenue",
-        color_continuous_scale="Blues",
+        color_discrete_sequence=[PRIMARY],
         title="Revenue Share Treemap by State",
         template=TEMPLATE,
     )
@@ -595,7 +631,7 @@ elif page == "Payment Behaviour":
             pay_expanded,
             names="payment_type", values="count",
             hole=0.5,
-            color_discrete_sequence=px.colors.qualitative.Set2,
+            color_discrete_sequence=[PRIMARY],
             title="Payment Type Distribution",
             template=TEMPLATE,
         )
@@ -605,9 +641,13 @@ elif page == "Payment Behaviour":
 
     with c2:
         # Installment distribution for credit card orders
+        inst_lo, inst_hi = st.slider(
+            "Credit-card installment range", 1, 12, (1, 12), key="inst_range"
+        )
         cc_df = orders_pay[
             (orders_pay["payment_types"] == "credit_card") &
-            (orders_pay["payment_installments"] <= 12)
+            (orders_pay["payment_installments"] >= inst_lo) &
+            (orders_pay["payment_installments"] <= inst_hi)
         ].copy()
         cc_df["payment_installments"] = cc_df["payment_installments"].astype(int)
         inst_sum = (
@@ -660,16 +700,14 @@ elif page == "Payment Behaviour":
     fig3 = px.bar(
         pay_revenue,
         x="payment_types", y="total",
-        color="avg",
-        color_continuous_scale="Blues",
+        color_discrete_sequence=[PRIMARY],
         text="orders",
         labels={
             "payment_types": "Payment Type",
             "total": "Total Revenue (BRL)",
-            "avg":   "Avg Order Value",
             "orders": "# Orders",
         },
-        title="Total Revenue & Avg Order Value by Payment Type",
+        title="Total Revenue by Payment Type",
         template=TEMPLATE,
     )
     fig3.update_traces(texttemplate="%{text:,} orders", textposition="outside")
@@ -681,8 +719,11 @@ elif page == "Payment Behaviour":
         cc_rows["count"].values[0] / pay_expanded["count"].sum() * 100
         if len(cc_rows) else 0.0
     )
-    v1  = cc_df[cc_df["payment_installments"] == 1]["payment_total_value"].mean()
-    v12 = cc_df[cc_df["payment_installments"] == 12]["payment_total_value"].mean()
+    # 12-vs-1 comparison uses all credit-card orders in the payment-type
+    # filter, independent of the installment-range slider above.
+    cc_all = orders_pay[orders_pay["payment_types"] == "credit_card"]
+    v1  = cc_all[cc_all["payment_installments"] == 1]["payment_total_value"].mean()
+    v12 = cc_all[cc_all["payment_installments"] == 12]["payment_total_value"].mean()
     if pd.notna(v1) and pd.notna(v12) and v1:
         insight = (
             f"12-installment buyers spend **{v12/v1:.1f}×** more than "
