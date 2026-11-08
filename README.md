@@ -40,6 +40,7 @@ The principal empirical findings are:
 - **Category economics are decoupled from satisfaction.** The highest-revenue category (`health_beauty`) scores respectably (4.19), while `bed_bath_table` (BRL 1.23M revenue) underperforms at 3.92, suggesting that revenue leadership does not guarantee service quality.
 - **One-time purchasing dominates.** 96.9% of customers transact exactly once; month-1 cohort retention averages ~0.45%, evidencing an acquisition-driven rather than loyalty-driven business model.
 - **Installment financing expands demand.** Credit cards account for 75.3% of payments, and buyers using 12 installments spend approximately 3.3× more than single-payment buyers.
+- **Revenue has plateaued at ~BRL 1.03M/month.** A backtested 6-month forecast (direct h-step, MAE-selected model) projects ~BRL 1.03M/month (~6,160 orders) through January 2019 — the earlier steep growth curve over-predicts because the Feb–Jul 2018 run-rate is flat. With only one November on record, the Black Friday amplitude is unmodelable; the projection is a capacity-planning tool, not a seasonal target.
 
 These findings are synthesized into six conclusions and a prioritized set of action items (e.g., SLA enforcement in north-eastern states, re-engagement of the ~22,000-customer "At Risk" RFM segment, loyalty-loop design, and geographic seller recruitment).
 
@@ -56,7 +57,7 @@ Beyond descriptive statistics, the project implements two complementary techniqu
 | Component | Technology |
 |---|---|
 | Analysis pipeline | `notebook.ipynb` -- pandas, numpy, seaborn, matplotlib, plotly |
-| Reusable analytics modules | `src/cohort.py`, `src/rfm.py`, `src/cluster.py` -- cohort retention, RFM segmentation, and K-means clustering, dataset-agnostic |
+| Reusable analytics modules | `src/cohort.py`, `src/rfm.py`, `src/cluster.py`, `src/forecast.py` -- cohort retention, RFM, K-means clustering, and short-horizon forecasting, dataset-agnostic |
 | Data exports | Parquet files under `dashboard/data/` (dtype-preserving, compact) |
 | Interactive dashboard | `dashboard/dashboard.py` -- Streamlit + Plotly, cached loading, seven analytical views with date/state/payment filters |
 | Reproducibility | Single-command re-execution via `jupyter nbconvert --execute`; dashboard consumes only exported artifacts |
@@ -71,7 +72,8 @@ data_analysis_project-dicoding/
 ├── src/
 │   ├── cohort.py                   # CohortAnalyzer: reusable cohort retention module
 │   ├── rfm.py                      # RFMAnalyzer: reusable RFM segmentation module
-│   └── cluster.py                  # ClusterAnalyzer: reusable K-means segmentation module
+│   ├── cluster.py                  # ClusterAnalyzer: reusable K-means segmentation module
+│   └── forecast.py                 # Forecaster: reusable backtest-and-forecast module
 ├── data/
 │   └── E-Commerce_Public_Dataset/  # Raw Olist CSV files (9 tables)
 ├── dashboard/
@@ -129,7 +131,7 @@ The current pipeline is deliberately descriptive-prescriptive; several methodolo
 
 1. **Cluster validation and alternative methods.** The implemented K-means segmentation establishes a baseline; remaining work is *validation* rather than basic clustering: stability assessment via bootstrap resampling and internal indices beyond silhouette (Calinski–Harabasz, Davies–Bouldin), comparison against alternative algorithms (Gaussian mixtures, DBSCAN/HDBSCAN for non-convex structures), and downstream validation of segments against repeat-purchase rates and revenue contribution before operationalization.
 
-2. **Time-series forecasting.** Monthly revenue and order volume exhibit trend, the November seasonal spike, and platform-growth dynamics suitable for decomposition (STL) followed by SARIMAX or state-space (ETS/Prophet-class) models, or gradient-boosted approaches (LightGBM with calendar covariates). Forecasts would enable inventory, logistics-capacity, and promotional-budget planning; backtesting on a held-out tail would be essential given the short series.
+2. **Richer forecasting.** The implemented baseline is deliberately honest about its limits — ~20 monthly observations support only trend/run-rate models (naive, linear, damped ETS), with model choice made by direct h-step backtest rather than in-sample fit. Extensions once more history accrues: seasonal specifications (SARIMAX/ETS-seasonal/Prophet-class) requiring ≥2 full years, exogenous covariates (marketing spend, category mix, macro indicators), nowcasting for the current partial month, and rolling-origin backtesting to track forecast skill over time.
 
 3. **Causal inference for delivery interventions.** The late-delivery/review-score relationship invites quasi-experimental designs -- difference-in-differences around logistics improvements, regression discontinuity at estimated-delivery thresholds, or instrumental-variable approaches exploiting exogenous distance/shipping-lane variation -- to move from association to actionable causal estimates of SLA enforcement.
 
